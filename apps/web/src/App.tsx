@@ -129,7 +129,7 @@ export function App() {
           </div>
           <div className="provider-pill">
             <span className="dot" />
-            Canopy / TMAPI Mock
+            Canopy / Apify Mock
           </div>
         </header>
 
@@ -385,7 +385,9 @@ function CandidateCard({ candidate, rank }: { candidate: RankedSourceItem; rank:
         <div className="candidate-title-row">
           <div>
             <h3>{candidate.title}</h3>
-            <p className="item-id">1688 商品 ID：{candidate.item_id}</p>
+            <p className="item-id">
+              {candidate.source} 商品 ID：{candidate.item_id}
+            </p>
           </div>
           <span className={candidate.final_score >= 0.72 ? "match strong" : "match"}>
             {localizeMatchLabel(candidate.match_label)}
@@ -440,7 +442,7 @@ function EmptyState({ isLoading }: { isLoading: boolean }) {
       {isLoading ? <Loader2 className="spin" size={30} /> : <ImageIcon size={30} />}
       <h2>{isLoading ? "正在匹配国内货源" : "等待输入第一个 Amazon 商品链接"}</h2>
       <p>
-        第一版已经跑通完整的模拟链路。后续只需要把 Canopy API、TMAPI 和 CLIP 服务替换为真实实现。
+        第一版已经跑通完整的模拟链路。后续只需要把 Canopy API、Apify 和 CLIP 服务替换为真实实现。
       </p>
     </section>
   );

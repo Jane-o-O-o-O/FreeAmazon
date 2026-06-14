@@ -7,12 +7,12 @@ The current version runs a complete pipeline in mock mode by default:
 ```text
 Amazon URL
   -> Canopy API product data or local mock data
-  -> mock TMAPI 1688 candidates
+  -> Apify 1688 candidates or local mock data
   -> mock CLIP similarity ranking
   -> React result page
 ```
 
-The Canopy REST adapter is implemented. TMAPI and CLIP still default to mock adapters so the MVP can run without paid credentials.
+The Canopy REST adapter and Apify/SiliconFlow 1688 source-search adapters are implemented. Apify and CLIP still default to mock adapters so the MVP can run without paid credentials.
 
 ## Stack
 
@@ -36,6 +36,24 @@ To use real Amazon product data from Canopy, set:
 CANOPY_API_KEY=your_canopy_api_key
 CANOPY_API_BASE_URL=https://rest.canopyapi.co
 CANOPY_USE_MOCK=false
+```
+
+To use real 1688 source data from Apify, set:
+
+```env
+APIFY_API_TOKEN=your_apify_api_token
+APIFY_API_BASE_URL=https://api.apify.com/v2
+APIFY_USE_MOCK=false
+APIFY_REVERSE_IMAGE_ACTOR=dev00/alibaba-1688-aliexpress-reverse-image-search-api
+APIFY_KEYWORD_SEARCH_ACTOR=ecomscrape/1688-product-search-scraper
+APIFY_REVERSE_IMAGE_DESTINATION=1688
+```
+
+SiliconFlow can optionally improve Chinese keyword generation:
+
+```env
+SILICONFLOW_API_KEY=your_siliconflow_key
+SILICONFLOW_USE_MOCK=false
 ```
 
 Run the API:
@@ -112,7 +130,7 @@ GET /api/source-search/tasks/{task_id}/results
 
 ## Next Development Steps
 
-1. Replace `Source1688Service._mock_candidates` with TMAPI image search and item detail calls.
+1. Validate Apify Actor output shapes against more Amazon categories and extend field normalizers.
 2. Replace `ClipService.image_similarity` with local CLIP embeddings.
 3. Add PostgreSQL persistence for tasks, products, images, and ranked source items.
-4. Move the synchronous mock pipeline into a background worker.
+4. Move the synchronous pipeline into a background worker.

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,9 +14,22 @@ class Settings(BaseSettings):
     canopy_timeout_seconds: float = 30.0
     canopy_use_mock: bool = True
 
-    tmapi_key: str | None = None
-    tmapi_base_url: str = "https://tmapi.top"
-    tmapi_use_mock: bool = True
+    apify_api_token: str | None = None
+    apify_api_base_url: str = "https://api.apify.com/v2"
+    apify_timeout_seconds: float = 120.0
+    apify_use_mock: bool = True
+    apify_reverse_image_actor: str = "dev00/alibaba-1688-aliexpress-reverse-image-search-api"
+    apify_keyword_search_actor: str = "ecomscrape/1688-product-search-scraper"
+    apify_reverse_image_destination: str = "1688"
+    apify_search_limit: int = 20
+    apify_keyword_limit: int = 3
+    apify_detail_limit: int = 20
+
+    siliconflow_api_key: str | None = None
+    siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
+    siliconflow_model: str = "inclusionAI/Ling-flash-2.0"
+    siliconflow_timeout_seconds: float = 30.0
+    siliconflow_use_mock: bool = True
 
     image_storage_dir: str = "./storage/images"
     clip_model_name: str = "ViT-B/32"
@@ -31,7 +45,10 @@ class Settings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(
+            Path(__file__).resolve().parents[4] / ".env",
+            ".env",
+        ),
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         extra="ignore",
