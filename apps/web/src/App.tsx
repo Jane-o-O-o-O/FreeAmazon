@@ -37,6 +37,7 @@ import {
   generateCopywriting,
   getSourceSearchResult,
   getSourceSearchTask,
+  proxiedImageUrl,
 } from "./api";
 
 const inputPlaceholder = "输入链接";
@@ -1188,15 +1189,12 @@ function CandidateCard({ candidate, rank }: { candidate: RankedSourceItem; rank:
     <article className="candidate-card">
       <div className="candidate-media">
         <span className="rank-badge">#{rank}</span>
-        <img src={candidate.image_url} alt={candidate.title} />
+        <img src={proxiedImageUrl(candidate.image_url)} alt={candidate.title} />
       </div>
       <div className="candidate-body">
         <div className="candidate-title-row">
           <div>
             <h3>{candidate.title}</h3>
-            <p className="item-id">
-              {candidate.source} 商品 ID：{candidate.item_id}
-            </p>
           </div>
           <div className="candidate-actions">
             <a className="link-button" href={candidate.url} target="_blank" rel="noreferrer">
@@ -1205,6 +1203,9 @@ function CandidateCard({ candidate, rank }: { candidate: RankedSourceItem; rank:
             </a>
           </div>
         </div>
+        <p className="item-id">
+          {candidate.source} 商品 ID：{candidate.item_id}
+        </p>
 
         <div className="metric-grid">
           <Metric label="综合评分" value={toPercent(candidate.final_score)} />

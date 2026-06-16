@@ -893,9 +893,9 @@ textarea:focus,
 }
 
 .candidate-title-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 10px;
 }
 
@@ -908,9 +908,12 @@ textarea:focus,
 }
 
 .item-id {
+  grid-column: 1 / -1;
   margin-bottom: 8px;
   color: #7a8780;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .metric-grid {

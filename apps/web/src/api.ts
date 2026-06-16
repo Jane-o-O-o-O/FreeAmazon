@@ -89,6 +89,20 @@ export type CopywritingResult = {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
+export function proxiedImageUrl(url: string) {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "alicdn.com" || hostname.endsWith(".alicdn.com")) {
+      return `${API_BASE_URL}/api/image-proxy?url=${encodeURIComponent(url)}`;
+    }
+  } catch {
+    return url;
+  }
+  return url;
+}
+
 export async function createSourceSearchTask(input: {
   amazon_url: string;
   marketplace?: string;
