@@ -140,6 +140,90 @@ def test_fetch_product_uses_canopy_client_when_mock_is_disabled(
         "base_url": "https://rest.canopyapi.co",
         "timeout_seconds": "30",
         "asin": "B0C1234567",
-        "domain": "us",
+        "domain": "US",
     }
     assert product.title == "Real Canopy Product"
+
+
+def test_fetch_product_resolves_amazon_short_link_before_canopy(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, str] = {}
+
+    class Settings:
+        canopy_use_mock = False
+        canopy_api_key = "test-key"
+        canopy_api_base_url = "https://rest.canopyapi.co"
+        canopy_timeout_seconds = 30
+
+    class FakeCanopyClient:
+        def __init__(self, api_key: str, base_url: str, timeout_seconds: float) -> None:
+            calls["api_key"] = api_key
+
+        def get_product(self, asin: str, domain: str) -> dict:
+            calls["asin"] = asin
+            calls["domain"] = domain
+            return {
+                "data": {
+                    "amazonProduct": {
+                        "asin": asin,
+                        "title": "Resolved Short Link Product",
+                        "url": f"https://www.amazon.com/dp/{asin}",
+                        "mainImageUrl": "https://example.com/main.jpg",
+                        "imageUrls": [],
+                    }
+                }
+            }
+
+    service = AmazonService()
+
+    monkeypatch.setattr("app.services.amazon_service.get_settings", lambda: Settings())
+    monkeypatch.setattr("app.services.amazon_service.CanopyClient", FakeCanopyClient)
+    monkeypatch.setattr(
+        service,
+        "resolve_short_url",
+        lambda url, timeout_seconds=10: "https://www.amazon.com/dp/B0GXCN1ZR4?ref=test",
+    )
+
+    product = service.fetch_product("https://a.co/d/04y8IkKM", "US")
+
+    assert calls["asin"] == "B0GXCN1ZR4"
+    assert product.asin == "B0GXCN1ZR4"
+    assert product.title == "Resolved Short Link Product"
+
+
+def test_fetch_product_prefers_marketplace_from_amazon_domain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, str] = {}
+
+    class Settings:
+        canopy_use_mock = False
+        canopy_api_key = "test-key"
+        canopy_api_base_url = "https://rest.canopyapi.co"
+        canopy_timeout_seconds = 30
+
+    class FakeCanopyClient:
+        def __init__(self, api_key: str, base_url: str, timeout_seconds: float) -> None:
+            pass
+
+        def get_product(self, asin: str, domain: str) -> dict:
+            calls["asin"] = asin
+            calls["domain"] = domain
+            return {
+                "data": {
+                    "amazonProduct": {
+                        "asin": asin,
+                        "title": "US Domain Product",
+                        "url": f"https://www.amazon.com/dp/{asin}",
+                        "mainImageUrl": "https://example.com/main.jpg",
+                        "imageUrls": [],
+                    }
+                }
+            }
+
+    monkeypatch.setattr("app.services.amazon_service.get_settings", lambda: Settings())
+    monkeypatch.setattr("app.services.amazon_service.CanopyClient", FakeCanopyClient)
+
+    product = AmazonService().fetch_product("https://www.amazon.com/dp/B09MQWWP87", "JP")
+
+    assert calls == {"asin": "B09MQWWP87", "domain": "US"}
+    assert product.marketplace == "US"

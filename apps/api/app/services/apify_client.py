@@ -14,7 +14,7 @@ class ApifyApiError(RuntimeError):
 
 @dataclass(frozen=True)
 class ApifyActors:
-    reverse_image: str
+    reverse_image: str | None
     keyword_search: str
 
 
@@ -44,6 +44,9 @@ class ApifyClient:
         destination: str,
         limit: int,
     ) -> list[dict[str, Any]]:
+        if not self.actors.reverse_image:
+            return []
+
         payload = {
             "imageUrl": image_url,
             "destination": destination,
@@ -57,8 +60,29 @@ class ApifyClient:
         limit: int,
         filters: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        return self.search_by_keywords(keywords=[keyword], limit=limit, filters=filters)
+
+    def search_by_keywords(
+        self,
+        *,
+        keywords: list[str],
+        limit: int,
+        filters: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        keywords = [keyword.strip() for keyword in keywords if keyword and keyword.strip()]
+        if not keywords:
+            return []
+
+        if self._is_zen_studio_1688_actor(self.actors.keyword_search):
+            payload = self._build_zen_studio_keyword_payload(
+                keywords=keywords,
+                limit=limit,
+                filters=filters,
+            )
+            return self._trim_items(self.run_actor(self.actors.keyword_search, payload), limit * len(keywords))
+
         payload: dict[str, Any] = {
-            "keyword": keyword,
+            "keyword": keywords[0],
             "max_items_per_url": limit,
             "max_retries_per_url": 2,
             "ignore_url_failures": True,
@@ -70,6 +94,49 @@ class ApifyClient:
             payload["priceEnd"] = str(max_price)
 
         return self._trim_items(self.run_actor(self.actors.keyword_search, payload), limit)
+
+    @staticmethod
+    def _is_zen_studio_1688_actor(actor_id: str) -> bool:
+        normalized = actor_id.lower().replace("~", "/")
+        return normalized in {
+            "ghxsmzcw3gxscrkir",
+            "zen-studio/1688-wholesale-scraper",
+        } or normalized.endswith("/1688-wholesale-scraper")
+
+    @staticmethod
+    def _build_zen_studio_keyword_payload(
+        *,
+        keywords: list[str],
+        limit: int,
+        filters: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "keywords": keywords,
+            "maxResults": max(1, min(int(limit), 10000)),
+            "sortBy": str(filters.get("sort_by") or "relevance"),
+            "includeSkuDetails": bool(filters.get("include_sku_details", False)),
+        }
+
+        max_price = filters.get("max_price_cny")
+        if max_price is not None:
+            payload["priceMax"] = int(float(max_price))
+
+        max_moq = filters.get("max_moq")
+        if max_moq is not None:
+            payload["minOrderQuantity"] = max(1, int(float(max_moq)))
+
+        if filters.get("factory_only"):
+            payload["merchantType"] = "superFactory"
+
+        province = filters.get("province")
+        if province:
+            payload["province"] = str(province)
+
+        city = filters.get("city")
+        if city:
+            payload["city"] = str(city)
+
+        return payload
 
     def run_actor(self, actor_id: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
         url = f"{self.base_url}/acts/{self._normalize_actor_id(actor_id)}/run-sync-get-dataset-items"

@@ -22,7 +22,7 @@ class Source1688Service:
             base_url=settings.apify_api_base_url,
             timeout_seconds=settings.apify_timeout_seconds,
             actors=ApifyActors(
-                reverse_image=settings.apify_reverse_image_actor,
+                reverse_image=settings.apify_reverse_image_actor or None,
                 keyword_search=settings.apify_keyword_search_actor,
             ),
         )
@@ -52,7 +52,7 @@ class Source1688Service:
         candidates: list[dict[str, Any]] = []
         errors: list[str] = []
 
-        if amazon_product.main_image_url:
+        if amazon_product.main_image_url and client.actors.reverse_image:
             try:
                 for item in client.search_by_image(
                     image_url=amazon_product.main_image_url,
@@ -66,20 +66,34 @@ class Source1688Service:
             except ApifyApiError as exc:
                 errors.append(f"图片搜索失败：{exc}")
 
-        keywords = siliconflow_keyword_service.generate_keywords(amazon_product)
-        for keyword in keywords[:keyword_limit]:
+        keywords = siliconflow_keyword_service.generate_keywords(amazon_product)[:keyword_limit]
+        if self._is_batch_keyword_actor(client.actors.keyword_search):
             try:
-                for item in client.search_by_keyword(
-                    keyword=keyword,
+                for item in client.search_by_keywords(
+                    keywords=keywords,
                     limit=max(3, min(limit, 20)),
                     filters=filters,
                 ):
                     item["_source_search_type"] = "keyword"
-                    item["_source_query"] = keyword
+                    item["_source_query"] = item.get("sourceKeyword") or ", ".join(keywords)
                     item["_source_actor"] = client.actors.keyword_search
                     candidates.append(item)
             except ApifyApiError as exc:
-                errors.append(f"关键词 `{keyword}` 搜索失败：{exc}")
+                errors.append(f"关键词搜索失败：{exc}")
+        else:
+            for keyword in keywords:
+                try:
+                    for item in client.search_by_keyword(
+                        keyword=keyword,
+                        limit=max(3, min(limit, 20)),
+                        filters=filters,
+                    ):
+                        item["_source_search_type"] = "keyword"
+                        item["_source_query"] = keyword
+                        item["_source_actor"] = client.actors.keyword_search
+                        candidates.append(item)
+                except ApifyApiError as exc:
+                    errors.append(f"关键词 `{keyword}` 搜索失败：{exc}")
 
         usable = [candidate for candidate in candidates if self._extract_item_id(candidate)]
         if usable:
@@ -212,6 +226,10 @@ class Source1688Service:
                     "productImage",
                     "product_image",
                     "images.0",
+                    "images.0.url",
+                    "images.0.imageUrl",
+                    "images.0.fullPathImageURI",
+                    "images.0.summImageURI",
                     "image_urls.0",
                     "product.images.0",
                 ],
@@ -249,6 +267,9 @@ class Source1688Service:
                     "begin_amount",
                     "quantityBegin",
                     "quantity_begin",
+                    "quantityPrices.0.minQuantity",
+                    "quantityPrices.0.beginAmount",
+                    "quantityPrices.0.startQuantity",
                 ],
             ),
             monthly_sales=self._extract_int(
@@ -265,6 +286,10 @@ class Source1688Service:
                     "orderCount",
                     "tradeCount",
                     "trade_count",
+                    "saledCount",
+                    "saled_count",
+                    "wantBuyCount",
+                    "want_buy_count",
                 ],
             ),
             supplier_id=self._extract_first_string(
@@ -280,6 +305,9 @@ class Source1688Service:
                     "shop_id",
                     "memberId",
                     "member_id",
+                    "supplier.memberId",
+                    "supplier.userId",
+                    "supplier.loginId",
                     "company.id",
                     "seller.id",
                     "supplier.id",
@@ -311,6 +339,8 @@ class Source1688Service:
                     "shop_name",
                     "companyName",
                     "company_name",
+                    "loginId",
+                    "login_id",
                     "storeName",
                     "store_name",
                     "name",
@@ -320,39 +350,15 @@ class Source1688Service:
                 candidate,
                 ["supplierName", "sellerName", "shopName", "companyName"],
             ),
-            "location": self._extract_first_string(
-                source,
-                [
-                    "location",
-                    "address",
-                    "province",
-                    "city",
-                    "region",
-                    "area",
-                    "supplierLocation",
-                    "supplier_location",
-                ],
-            )
+            "location": self._extract_supplier_location(source, candidate)
             or self._extract_first_string(
                 candidate,
                 ["supplierLocation", "sellerLocation", "location", "address"],
             ),
-            "years": self._extract_int(
+            "years": self._extract_supplier_years(source, candidate),
+            "seller_type": self._extract_first_string(
                 source,
-                [
-                    "years",
-                    "supplierYears",
-                    "supplier_years",
-                    "shopYears",
-                    "shop_years",
-                    "companyYears",
-                    "company_years",
-                    "businessYears",
-                ],
-            )
-            or self._extract_int(
-                candidate,
-                ["supplierYears", "shopYears", "companyYears", "years"],
+                ["sellerType", "seller_type", "merchantType", "merchant_type"],
             ),
         }
 
@@ -370,6 +376,8 @@ class Source1688Service:
                     "product_url",
                     "link",
                     "href",
+                    "sameDesignUrl",
+                    "same_design_url",
                 ],
             )
             or f"https://detail.1688.com/offer/{item_id}.html"
@@ -407,6 +415,7 @@ class Source1688Service:
                 "productId",
                 "product.id",
                 "item.id",
+                "offer.offerId",
             ],
         )
         if direct:
@@ -414,7 +423,17 @@ class Source1688Service:
 
         url = self._extract_first_string(
             item,
-            ["url", "detailUrl", "detail_url", "itemUrl", "productUrl", "link", "href"],
+            [
+                "url",
+                "detailUrl",
+                "detail_url",
+                "itemUrl",
+                "productUrl",
+                "link",
+                "href",
+                "sameDesignUrl",
+                "same_design_url",
+            ],
         )
         if url:
             match = re.search(
@@ -439,17 +458,26 @@ class Source1688Service:
                 "minPrice",
                 "min_price",
                 "price.min",
+                "price.price",
                 "priceInfo.price",
                 "priceInfo.min",
+                "quantityPrices.0.price",
             ],
         )
         max_price = self._extract_float(
             item,
-            ["priceMax", "price_max", "maxPrice", "max_price", "price.max", "priceInfo.max"],
+            [
+                "priceMax",
+                "price_max",
+                "maxPrice",
+                "max_price",
+                "price.max",
+                "priceInfo.max",
+            ],
         )
         single_price = self._extract_float(
             item,
-            ["price", "salePrice", "sale_price", "unitPrice", "unit_price", "price.value"],
+            ["salePrice", "sale_price", "unitPrice", "unit_price", "price.value"],
         )
 
         if min_price is not None or max_price is not None:
@@ -478,8 +506,65 @@ class Source1688Service:
             return None, None
         return min(numbers), max(numbers)
 
+    def _extract_supplier_location(
+        self,
+        source: dict[str, Any],
+        candidate: dict[str, Any],
+    ) -> str | None:
+        explicit = self._extract_first_string(
+            source,
+            ["location", "address", "region", "area", "supplierLocation", "supplier_location"],
+        )
+        if explicit:
+            return explicit
+
+        province = self._extract_first_string(source, ["province"])
+        city = self._extract_first_string(source, ["city"])
+        combined = " ".join(part for part in [province, city] if part)
+        if combined:
+            return combined
+
+        return self._extract_first_string(candidate, ["province", "city"])
+
+    def _extract_supplier_years(
+        self,
+        source: dict[str, Any],
+        candidate: dict[str, Any],
+    ) -> int | None:
+        years = self._extract_int(
+            source,
+            [
+                "years",
+                "supplierYears",
+                "supplier_years",
+                "shopYears",
+                "shop_years",
+                "companyYears",
+                "company_years",
+                "businessYears",
+                "tpYear",
+                "tp_year",
+            ],
+        ) or self._extract_int(
+            candidate,
+            ["supplierYears", "shopYears", "companyYears", "years"],
+        )
+        if years is not None:
+            return years
+
+        founded_year = self._extract_int(
+            source,
+            ["foundedYear", "founded_year", "establishedYear", "established_year"],
+        )
+        if founded_year and 1900 <= founded_year <= 2100:
+            from datetime import datetime
+
+            return max(0, datetime.now().year - founded_year)
+        return None
+
     def _apply_filters(self, items: list[SourceItem], filters: dict) -> list[SourceItem]:
         max_price = filters.get("max_price_cny")
+        max_moq = filters.get("max_moq")
         factory_only = filters.get("factory_only", False)
         dropshipping = filters.get("dropshipping", False)
         min_supplier_years = filters.get("min_supplier_years")
@@ -487,6 +572,8 @@ class Source1688Service:
         results = []
         for item in items:
             if max_price is not None and item.price_min is not None and item.price_min > max_price:
+                continue
+            if max_moq is not None and item.moq is not None and item.moq > max_moq:
                 continue
             if factory_only and not item.is_factory:
                 continue
@@ -513,6 +600,12 @@ class Source1688Service:
                 "supplier.isFactory",
                 "seller.isFactory",
                 "shop.isFactory",
+                "supplier.flags.isFactory",
+                "supplier.flags.isSuperFactory",
+                "supplier.flags.isTpFactory",
+                "supplier.flags.isShiliFactory",
+                "supplier.isFactoryInspected",
+                "supplier.isSuperFactory",
             ],
         ):
             return True
@@ -523,6 +616,8 @@ class Source1688Service:
                 supplier.get("name"),
                 candidate.get("tags"),
                 candidate.get("badges"),
+                candidate.get("productFlags"),
+                supplier.get("seller_type"),
             ]
             if value
         )
@@ -537,6 +632,10 @@ class Source1688Service:
                 "supportDropshipping",
                 "support_dropshipping",
                 "dropshipping",
+                "dropship",
+                "dropship.supportsDropship",
+                "dropship.supportsDistribution",
+                "supplier.supportsDistribution",
                 "onePieceDropshipping",
                 "one_piece_dropshipping",
             ],
@@ -549,6 +648,8 @@ class Source1688Service:
                 candidate.get("tags"),
                 candidate.get("badges"),
                 candidate.get("serviceTags"),
+                candidate.get("services"),
+                candidate.get("dropship"),
             ]
             if value
         )
@@ -634,6 +735,14 @@ class Source1688Service:
         if value.startswith("//"):
             return f"https:{value}"
         return value
+
+    @staticmethod
+    def _is_batch_keyword_actor(actor_id: str) -> bool:
+        normalized = actor_id.lower().replace("~", "/")
+        return normalized in {
+            "ghxsmzcw3gxscrkir",
+            "zen-studio/1688-wholesale-scraper",
+        } or normalized.endswith("/1688-wholesale-scraper")
 
 
 source1688_service = Source1688Service()

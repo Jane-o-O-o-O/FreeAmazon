@@ -2,6 +2,8 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
+
 from app.core.config import get_settings
 from app.models.source_search import AmazonProduct
 from app.services.canopy_client import CanopyClient
@@ -13,6 +15,18 @@ ASIN_PATTERNS = [
     re.compile(r"/product/([A-Z0-9]{10})(?:[/?]|$)", re.IGNORECASE),
     re.compile(r"[?&]asin=([A-Z0-9]{10})(?:&|$)", re.IGNORECASE),
 ]
+SHORT_LINK_HOSTS = {"a.co", "amzn.to"}
+MARKETPLACE_BY_HOST = {
+    "amazon.com": "US",
+    "amazon.co.uk": "UK",
+    "amazon.de": "DE",
+    "amazon.co.jp": "JP",
+    "amazon.ca": "CA",
+    "amazon.com.au": "AU",
+    "amazon.fr": "FR",
+    "amazon.it": "IT",
+    "amazon.es": "ES",
+}
 
 
 class AmazonService:
@@ -36,23 +50,68 @@ class AmazonService:
 
     def fetch_product(self, amazon_url: str, marketplace: str) -> AmazonProduct:
         settings = get_settings()
-        asin = self.parse_asin_from_url(amazon_url)
+        resolved_url = self.resolve_short_url(
+            amazon_url,
+            timeout_seconds=min(settings.canopy_timeout_seconds, 12),
+        )
+        asin = self.parse_asin_from_url(resolved_url)
+        resolved_marketplace = self.marketplace_from_url(resolved_url) or marketplace
 
         if settings.canopy_use_mock:
-            return self._mock_product(asin=asin, marketplace=marketplace, amazon_url=amazon_url)
+            return self._mock_product(
+                asin=asin,
+                marketplace=resolved_marketplace,
+                amazon_url=resolved_url,
+            )
 
         client = CanopyClient(
             api_key=settings.canopy_api_key,
             base_url=settings.canopy_api_base_url,
             timeout_seconds=settings.canopy_timeout_seconds,
         )
-        payload = client.get_product(asin=asin, domain=marketplace)
+        payload = client.get_product(asin=asin, domain=resolved_marketplace)
         return self._product_from_canopy_payload(
             payload=payload,
             fallback_asin=asin,
-            fallback_url=amazon_url,
-            marketplace=marketplace,
+            fallback_url=resolved_url,
+            marketplace=resolved_marketplace,
         )
+
+    def resolve_short_url(self, url_or_asin: str, timeout_seconds: float = 10.0) -> str:
+        value = url_or_asin.strip()
+        if ASIN_RE.match(value):
+            return value
+
+        parsed = urlparse(value)
+        host = parsed.netloc.lower().removeprefix("www.")
+        if host not in SHORT_LINK_HOSTS:
+            return value
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0 Safari/537.36"
+            )
+        }
+        try:
+            with httpx.Client(
+                follow_redirects=True,
+                timeout=timeout_seconds,
+                headers=headers,
+            ) as client:
+                response = client.get(value)
+                response.raise_for_status()
+                return str(response.url)
+        except httpx.HTTPError:
+            return value
+
+    def marketplace_from_url(self, url_or_asin: str) -> str | None:
+        parsed = urlparse(url_or_asin.strip())
+        host = parsed.netloc.lower().removeprefix("www.")
+        if not host:
+            return None
+        return MARKETPLACE_BY_HOST.get(host)
 
     def _product_from_canopy_payload(
         self,

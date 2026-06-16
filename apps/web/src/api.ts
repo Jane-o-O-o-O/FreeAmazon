@@ -1,5 +1,6 @@
 export type SourceSearchFilters = {
   max_price_cny?: number | null;
+  max_moq?: number | null;
   factory_only: boolean;
   dropshipping: boolean;
   min_supplier_years?: number | null;
@@ -60,13 +61,37 @@ export type SourceSearchResult = {
   task_id: string;
   amazon_product: AmazonProduct;
   candidates: RankedSourceItem[];
+  is_partial: boolean;
+};
+
+export type CopywritingRequest = {
+  site: string;
+  product_name: string;
+  audience?: string | null;
+  selling_points?: string | null;
+  keywords?: string | null;
+  tone: string;
+  language: string;
+};
+
+export type CopywritingResult = {
+  site: string;
+  generation_source: string;
+  model?: string | null;
+  skill: string;
+  title: string;
+  short_title: string;
+  bullet_points: string[];
+  description: string;
+  tags: string[];
+  seo_keywords: string[];
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 export async function createSourceSearchTask(input: {
   amazon_url: string;
-  marketplace: string;
+  marketplace?: string;
   filters: SourceSearchFilters;
 }): Promise<SourceSearchTask> {
   const response = await fetch(`${API_BASE_URL}/api/source-search/tasks`, {
@@ -85,12 +110,44 @@ export async function createSourceSearchTask(input: {
   return response.json();
 }
 
-export async function getSourceSearchResult(taskId: string): Promise<SourceSearchResult> {
+export async function getSourceSearchResult(taskId: string): Promise<SourceSearchResult | null> {
   const response = await fetch(`${API_BASE_URL}/api/source-search/tasks/${taskId}/results`);
+
+  if (response.status === 404) {
+    return null;
+  }
 
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || "Failed to fetch results");
+  }
+
+  return response.json();
+}
+
+export async function getSourceSearchTask(taskId: string): Promise<SourceSearchTask> {
+  const response = await fetch(`${API_BASE_URL}/api/source-search/tasks/${taskId}`);
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "Failed to fetch task");
+  }
+
+  return response.json();
+}
+
+export async function generateCopywriting(input: CopywritingRequest): Promise<CopywritingResult> {
+  const response = await fetch(`${API_BASE_URL}/api/copywriting/generate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "Failed to generate copywriting");
   }
 
   return response.json();

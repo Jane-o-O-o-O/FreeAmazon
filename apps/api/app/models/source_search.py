@@ -76,3 +76,4 @@ class SourceSearchResult:
     task_id: str
     amazon_product: AmazonProduct
     candidates: list[RankedSourceItem]
+    is_partial: bool = False

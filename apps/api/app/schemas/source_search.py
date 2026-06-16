@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class SourceSearchFilters(BaseModel):
     max_price_cny: float | None = None
+    max_moq: int | None = None
     factory_only: bool = False
     dropshipping: bool = False
     min_supplier_years: int | None = None
@@ -71,3 +72,4 @@ class SourceSearchResultResponse(BaseModel):
     task_id: str
     amazon_product: AmazonProductResponse
     candidates: list[RankedSourceItemResponse]
+    is_partial: bool = False

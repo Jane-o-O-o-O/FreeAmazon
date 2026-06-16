@@ -7,7 +7,7 @@ from app.services.apify_client import ApifyActors, ApifyApiError, ApifyClient, A
 def actors() -> ApifyActors:
     return ApifyActors(
         reverse_image="dev00/alibaba-1688-aliexpress-reverse-image-search-api",
-        keyword_search="ecomscrape/1688-product-search-scraper",
+        keyword_search="ghXSMZcW3GxsCrkiR",
     )
 
 
@@ -54,6 +54,46 @@ def test_apify_client_runs_actor_with_bearer_token(monkeypatch: pytest.MonkeyPat
     )
     assert '"imageUrl":"https://example.com/main.jpg"' in str(captured["json"])
     assert '"destination":"1688"' in str(captured["json"])
+
+
+def test_apify_client_builds_zen_studio_keyword_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["json"] = request.read().decode("utf-8")
+        return httpx.Response(200, json=[{"offerId": "123"}, {"offerId": "456"}])
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def client_factory(*args: object, **kwargs: object) -> httpx.Client:
+        kwargs["transport"] = transport
+        return original_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", client_factory)
+
+    items = ApifyClient(
+        api_token="test-token",
+        base_url="https://api.apify.com/v2/",
+        timeout_seconds=30,
+        actors=actors(),
+    ).search_by_keywords(
+        keywords=["便携榨汁杯", "随行杯"],
+        limit=5,
+        filters={"max_price_cny": 30, "factory_only": True, "max_moq": 10},
+    )
+
+    assert items == [{"offerId": "123"}, {"offerId": "456"}]
+    assert captured["url"] == (
+        "https://api.apify.com/v2/acts/"
+        "ghXSMZcW3GxsCrkiR/run-sync-get-dataset-items"
+    )
+    assert '"keywords":["便携榨汁杯","随行杯"]' in str(captured["json"])
+    assert '"maxResults":5' in str(captured["json"])
+    assert '"priceMax":30' in str(captured["json"])
+    assert '"merchantType":"superFactory"' in str(captured["json"])
+    assert '"minOrderQuantity":10' in str(captured["json"])
 
 
 def test_apify_client_formats_api_errors(monkeypatch: pytest.MonkeyPatch) -> None:

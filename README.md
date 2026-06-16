@@ -44,10 +44,15 @@ To use real 1688 source data from Apify, set:
 APIFY_API_TOKEN=your_apify_api_token
 APIFY_API_BASE_URL=https://api.apify.com/v2
 APIFY_USE_MOCK=false
-APIFY_REVERSE_IMAGE_ACTOR=dev00/alibaba-1688-aliexpress-reverse-image-search-api
-APIFY_KEYWORD_SEARCH_ACTOR=ecomscrape/1688-product-search-scraper
+APIFY_REVERSE_IMAGE_ACTOR=
+APIFY_KEYWORD_SEARCH_ACTOR=ghXSMZcW3GxsCrkiR
 APIFY_REVERSE_IMAGE_DESTINATION=1688
 ```
+
+The default 1688 provider is Apify Actor
+`ghXSMZcW3GxsCrkiR` (`zen-studio/1688-wholesale-scraper`). It accepts `keywords`,
+`maxResults`, `priceMax`, `minOrderQuantity`, `merchantType`, `province`, and `city`.
+The backend maps Amazon-derived Chinese keywords and purchase filters into those fields.
 
 SiliconFlow can optionally improve Chinese keyword generation:
 
@@ -130,7 +135,7 @@ GET /api/source-search/tasks/{task_id}/results
 
 ## Next Development Steps
 
-1. Validate Apify Actor output shapes against more Amazon categories and extend field normalizers.
+1. Validate Apify Actor output relevance against more Amazon categories and tune keyword generation.
 2. Replace `ClipService.image_similarity` with local CLIP embeddings.
 3. Add PostgreSQL persistence for tasks, products, images, and ranked source items.
 4. Move the synchronous pipeline into a background worker.

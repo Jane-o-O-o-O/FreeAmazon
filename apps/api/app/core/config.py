@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     apify_api_base_url: str = "https://api.apify.com/v2"
     apify_timeout_seconds: float = 120.0
     apify_use_mock: bool = True
-    apify_reverse_image_actor: str = "dev00/alibaba-1688-aliexpress-reverse-image-search-api"
-    apify_keyword_search_actor: str = "ecomscrape/1688-product-search-scraper"
+    apify_reverse_image_actor: str = ""
+    apify_keyword_search_actor: str = "ghXSMZcW3GxsCrkiR"
     apify_reverse_image_destination: str = "1688"
     apify_search_limit: int = 20
     apify_keyword_limit: int = 3

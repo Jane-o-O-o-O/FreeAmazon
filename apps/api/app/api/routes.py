@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
+from app.schemas.copywriting import CopywritingRequest, CopywritingResponse
 from app.schemas.source_search import (
     CreateSourceSearchTaskRequest,
     SourceSearchResultResponse,
     SourceSearchTaskResponse,
 )
+from app.services.copywriting_service import copywriting_service
 from app.services.task_service import task_service
 
 router = APIRouter()
@@ -15,11 +17,17 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.post("/api/copywriting/generate", response_model=CopywritingResponse)
+def generate_copywriting(payload: CopywritingRequest) -> CopywritingResponse:
+    return copywriting_service.generate(payload)
+
+
 @router.post("/api/source-search/tasks", response_model=SourceSearchTaskResponse)
 def create_source_search_task(
     payload: CreateSourceSearchTaskRequest,
+    background_tasks: BackgroundTasks,
 ) -> SourceSearchTaskResponse:
-    return task_service.create_and_run(payload)
+    return task_service.create(payload, background_tasks)
 
 
 @router.get("/api/source-search/tasks/{task_id}", response_model=SourceSearchTaskResponse)

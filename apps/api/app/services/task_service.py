@@ -1,5 +1,7 @@
 from uuid import uuid4
 
+from fastapi import BackgroundTasks
+
 from app.models.source_search import SourceSearchResult, SourceSearchTask, now_utc
 from app.schemas.source_search import (
     AmazonProductResponse,
@@ -18,6 +20,24 @@ class TaskService:
         self._tasks: dict[str, SourceSearchTask] = {}
         self._results: dict[str, SourceSearchResult] = {}
 
+    def create(
+        self,
+        payload: CreateSourceSearchTaskRequest,
+        background_tasks: BackgroundTasks,
+    ) -> SourceSearchTaskResponse:
+        task_id = f"task_{uuid4().hex[:12]}"
+        task = SourceSearchTask(
+            id=task_id,
+            amazon_url=payload.amazon_url,
+            marketplace=payload.marketplace.upper(),
+            status="created",
+            progress=0,
+            message="任务已创建",
+        )
+        self._tasks[task_id] = task
+        background_tasks.add_task(self.run, task_id, payload)
+        return self._task_response(task)
+
     def create_and_run(self, payload: CreateSourceSearchTaskRequest) -> SourceSearchTaskResponse:
         task_id = f"task_{uuid4().hex[:12]}"
         task = SourceSearchTask(
@@ -29,7 +49,11 @@ class TaskService:
             message="任务已创建",
         )
         self._tasks[task_id] = task
+        self.run(task_id, payload)
+        return self._task_response(task)
 
+    def run(self, task_id: str, payload: CreateSourceSearchTaskRequest) -> None:
+        task = self._tasks[task_id]
         try:
             self._run_pipeline(task, payload)
         except Exception as exc:
@@ -38,8 +62,6 @@ class TaskService:
             task.error_message = str(exc)
             task.message = "任务执行失败"
             task.updated_at = now_utc()
-
-        return self._task_response(task)
 
     def get_task(self, task_id: str) -> SourceSearchTaskResponse | None:
         task = self._tasks.get(task_id)
@@ -56,6 +78,13 @@ class TaskService:
     ) -> None:
         self._update(task, "fetching_amazon", 20, "正在读取 Amazon 商品信息")
         amazon_product = amazon_service.fetch_product(payload.amazon_url, payload.marketplace)
+        task.marketplace = amazon_product.marketplace
+        self._results[task.id] = SourceSearchResult(
+            task_id=task.id,
+            amazon_product=amazon_product,
+            candidates=[],
+            is_partial=True,
+        )
 
         self._update(task, "searching_1688", 45, "正在搜索 1688 候选货源")
         candidates = source1688_service.search_candidates(
@@ -70,6 +99,7 @@ class TaskService:
             task_id=task.id,
             amazon_product=amazon_product,
             candidates=ranked,
+            is_partial=False,
         )
         self._update(task, "completed", 100, "匹配完成")
 
@@ -136,6 +166,7 @@ class TaskService:
                 )
                 for ranked in result.candidates
             ],
+            is_partial=result.is_partial,
         )
 
 
