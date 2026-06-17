@@ -88,6 +88,79 @@ export type CopywritingResult = {
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const authStorageKey = "amazon-agent-access-token";
+
+export type LoginResult = {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  username: string;
+};
+
+export type SessionResult = {
+  authenticated: boolean;
+  username: string;
+};
+
+export function getStoredAccessToken() {
+  return window.localStorage.getItem(authStorageKey);
+}
+
+export function storeAccessToken(token: string) {
+  window.localStorage.setItem(authStorageKey, token);
+}
+
+export function clearAccessToken() {
+  window.localStorage.removeItem(authStorageKey);
+}
+
+function authHeaders() {
+  const token = getStoredAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function apiFetch(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  Object.entries(authHeaders()).forEach(([key, value]) => headers.set(key, value));
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers,
+  });
+  if (response.status === 401) {
+    clearAccessToken();
+  }
+  return response;
+}
+
+export async function login(input: { username: string; password: string }): Promise<LoginResult> {
+  const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "登录失败");
+  }
+
+  const result = (await response.json()) as LoginResult;
+  storeAccessToken(result.access_token);
+  return result;
+}
+
+export async function getSession(): Promise<SessionResult> {
+  const response = await apiFetch("/api/auth/session");
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "会话已失效");
+  }
+
+  return response.json();
+}
 
 export function proxiedImageUrl(url: string) {
   if (!url) return url;
@@ -95,7 +168,9 @@ export function proxiedImageUrl(url: string) {
     const parsed = new URL(url);
     const hostname = parsed.hostname.toLowerCase();
     if (hostname === "alicdn.com" || hostname.endsWith(".alicdn.com")) {
-      return `${API_BASE_URL}/api/image-proxy?url=${encodeURIComponent(url)}`;
+      const token = getStoredAccessToken();
+      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
+      return `${API_BASE_URL}/api/image-proxy?url=${encodeURIComponent(url)}${tokenParam}`;
     }
   } catch {
     return url;
@@ -108,7 +183,7 @@ export async function createSourceSearchTask(input: {
   marketplace?: string;
   filters: SourceSearchFilters;
 }): Promise<SourceSearchTask> {
-  const response = await fetch(`${API_BASE_URL}/api/source-search/tasks`, {
+  const response = await apiFetch("/api/source-search/tasks", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -125,7 +200,7 @@ export async function createSourceSearchTask(input: {
 }
 
 export async function getSourceSearchResult(taskId: string): Promise<SourceSearchResult | null> {
-  const response = await fetch(`${API_BASE_URL}/api/source-search/tasks/${taskId}/results`);
+  const response = await apiFetch(`/api/source-search/tasks/${taskId}/results`);
 
   if (response.status === 404) {
     return null;
@@ -140,7 +215,7 @@ export async function getSourceSearchResult(taskId: string): Promise<SourceSearc
 }
 
 export async function getSourceSearchTask(taskId: string): Promise<SourceSearchTask> {
-  const response = await fetch(`${API_BASE_URL}/api/source-search/tasks/${taskId}`);
+  const response = await apiFetch(`/api/source-search/tasks/${taskId}`);
 
   if (!response.ok) {
     const message = await response.text();
@@ -151,7 +226,7 @@ export async function getSourceSearchTask(taskId: string): Promise<SourceSearchT
 }
 
 export async function generateCopywriting(input: CopywritingRequest): Promise<CopywritingResult> {
-  const response = await fetch(`${API_BASE_URL}/api/copywriting/generate`, {
+  const response = await apiFetch("/api/copywriting/generate", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

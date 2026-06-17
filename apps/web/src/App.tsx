@@ -19,6 +19,8 @@ import {
   Search,
   History,
   ListChecks,
+  LogOut,
+  LockKeyhole,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -33,10 +35,14 @@ import {
   SourceSearchFilters,
   SourceSearchResult,
   SourceSearchTask,
+  clearAccessToken,
   createSourceSearchTask,
   generateCopywriting,
+  getSession,
+  getStoredAccessToken,
   getSourceSearchResult,
   getSourceSearchTask,
+  login,
   proxiedImageUrl,
 } from "./api";
 
@@ -58,6 +64,7 @@ const maxHistoryEntries = 50;
 const candidatesPerPage = 4;
 
 type ActiveView = "search" | "history" | "copywriting";
+type AuthStatus = "checking" | "authenticated" | "anonymous";
 
 type CopywritingForm = {
   site: string;
@@ -135,6 +142,12 @@ function compactEntryUpdate(entry: Partial<SearchHistoryEntry> & { task_id: stri
 }
 
 export function App() {
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(() =>
+    getStoredAccessToken() ? "checking" : "anonymous",
+  );
+  const [authUser, setAuthUser] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoginLoading, setIsLoginLoading] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>("search");
   const [amazonUrl, setAmazonUrl] = useState("");
   const [filters, setFilters] = useState<SourceSearchFilters>({
@@ -161,6 +174,57 @@ export function App() {
   const [copywritingResult, setCopywritingResult] = useState<CopywritingResult | null>(null);
   const [copywritingError, setCopywritingError] = useState<string | null>(null);
   const [isCopywritingLoading, setIsCopywritingLoading] = useState(false);
+
+  useEffect(() => {
+    if (!getStoredAccessToken()) {
+      setAuthStatus("anonymous");
+      return;
+    }
+    let active = true;
+    getSession()
+      .then((session) => {
+        if (!active) return;
+        setAuthUser(session.username);
+        setAuthStatus(session.authenticated ? "authenticated" : "anonymous");
+      })
+      .catch(() => {
+        if (!active) return;
+        clearAccessToken();
+        setAuthUser(null);
+        setAuthStatus("anonymous");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function submitLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const username = String(formData.get("username") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
+    setLoginError(null);
+    setIsLoginLoading(true);
+    try {
+      const result = await login({ username, password });
+      setAuthUser(result.username);
+      setAuthStatus("authenticated");
+    } catch (caught) {
+      setLoginError(caught instanceof Error ? "账号或密码不正确" : "登录失败");
+      clearAccessToken();
+    } finally {
+      setIsLoginLoading(false);
+    }
+  }
+
+  function logout() {
+    clearAccessToken();
+    setAuthUser(null);
+    setAuthStatus("anonymous");
+    setTask(null);
+    setResult(null);
+    setError(null);
+  }
 
   function upsertHistory(entry: Partial<SearchHistoryEntry> & { task_id: string }) {
     setHistory((current) => {
@@ -318,6 +382,27 @@ export function App() {
   const completedCount = result?.candidates.length ?? 0;
   const bestScore = result?.candidates[0]?.final_score ?? null;
 
+  if (authStatus === "checking") {
+    return (
+      <main className="auth-shell">
+        <section className="auth-card auth-card-loading">
+          <Loader2 className="spin" size={28} />
+          <span>正在验证访问许可</span>
+        </section>
+      </main>
+    );
+  }
+
+  if (authStatus === "anonymous") {
+    return (
+      <LoginScreen
+        error={loginError}
+        isLoading={isLoginLoading}
+        onSubmit={submitLogin}
+      />
+    );
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar" aria-label="主导航">
@@ -374,6 +459,13 @@ export function App() {
           </span>
         </div>
 
+        <div className="sidebar-account">
+          <span>{authUser ?? "已授权账号"}</span>
+          <button className="secondary-button compact-button" type="button" onClick={logout}>
+            <LogOut size={15} />
+            退出
+          </button>
+        </div>
       </aside>
 
       {activeView === "search" ? (
@@ -408,6 +500,65 @@ export function App() {
           submit={submitCopywriting}
         />
       )}
+    </main>
+  );
+}
+
+function LoginScreen({
+  error,
+  isLoading,
+  onSubmit,
+}: {
+  error: string | null;
+  isLoading: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <main className="auth-shell">
+      <section className="auth-card">
+        <div className="auth-brand">
+          <div className="brand-mark">
+            <LockKeyhole size={22} />
+          </div>
+          <div>
+            <strong>Amazon-Agent</strong>
+            <span>访问许可验证</span>
+          </div>
+        </div>
+
+        <div className="auth-heading">
+          <p className="eyebrow">内部演示系统</p>
+          <h1>请输入许可账号密码</h1>
+          <p>验证通过后可进入跨境选品、1688 找货和文案生成工作台。</p>
+        </div>
+
+        <form className="auth-form" onSubmit={onSubmit}>
+          <label className="field-group">
+            账号
+            <input name="username" autoComplete="username" placeholder="请输入账号" required />
+          </label>
+          <label className="field-group">
+            密码
+            <input
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="请输入密码"
+              required
+            />
+          </label>
+          {error ? (
+            <div className="error-banner auth-error">
+              <AlertCircle size={18} />
+              <span>{error}</span>
+            </div>
+          ) : null}
+          <button className="primary-button" disabled={isLoading}>
+            {isLoading ? <Loader2 className="spin" size={18} /> : <LockKeyhole size={18} />}
+            {isLoading ? "验证中" : "进入系统"}
+          </button>
+        </form>
+      </section>
     </main>
   );
 }

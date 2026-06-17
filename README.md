@@ -30,6 +30,15 @@ Copy the environment template:
 Copy-Item .env.example .env
 ```
 
+Set the access gate credentials before deploying or sharing the site:
+
+```env
+ACCESS_USERNAME=your_username
+ACCESS_PASSWORD=your_strong_password
+ACCESS_TOKEN_SECRET=replace_with_a_long_random_secret
+ACCESS_TOKEN_TTL_SECONDS=43200
+```
+
 To use real Amazon product data from Canopy, set:
 
 ```env

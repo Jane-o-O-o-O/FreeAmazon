@@ -56,6 +56,81 @@ button {
     var(--bg);
 }
 
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(31, 111, 88, 0.12), transparent 320px),
+    linear-gradient(180deg, rgba(49, 93, 134, 0.07), rgba(238, 241, 237, 0) 420px),
+    var(--bg);
+}
+
+.auth-card {
+  width: min(440px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow);
+}
+
+.auth-card-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 180px;
+  color: #34493f;
+  font-weight: 900;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.auth-brand strong {
+  display: block;
+  color: var(--text);
+  font-size: 1.02rem;
+}
+
+.auth-brand span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.auth-heading {
+  margin: 26px 0 20px;
+}
+
+.auth-heading h1 {
+  margin-bottom: 8px;
+  font-size: 1.7rem;
+}
+
+.auth-heading p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.58;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-error {
+  margin-top: 0;
+}
+
 .sidebar {
   position: fixed;
   top: 0;
@@ -168,6 +243,25 @@ button {
 
 .sidebar-status svg {
   color: var(--primary);
+}
+
+.sidebar-account {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 16px;
+}
+
+.sidebar-account > span {
+  color: #34493f;
+  font-size: 0.82rem;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-account .secondary-button {
+  justify-content: flex-start;
 }
 
 .dot {

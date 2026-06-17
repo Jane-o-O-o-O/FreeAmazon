@@ -8,6 +8,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "info"
+    access_username: str = "admin"
+    access_password: str = "change-me"
+    access_token_secret: str = "change-this-token-secret"
+    access_token_ttl_seconds: int = 60 * 60 * 12
 
     canopy_api_key: str | None = None
     canopy_api_base_url: str = "https://rest.canopyapi.co"

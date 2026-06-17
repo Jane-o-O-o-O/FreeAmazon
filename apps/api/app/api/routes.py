@@ -1,14 +1,16 @@
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response
 
+from app.schemas.auth import LoginRequest, LoginResponse, SessionResponse
 from app.schemas.copywriting import CopywritingRequest, CopywritingResponse
 from app.schemas.source_search import (
     CreateSourceSearchTaskRequest,
     SourceSearchResultResponse,
     SourceSearchTaskResponse,
 )
+from app.services.auth_service import AuthenticationError, auth_service
 from app.services.copywriting_service import copywriting_service
 from app.services.task_service import task_service
 
@@ -18,13 +20,60 @@ IMAGE_PROXY_ALLOWED_DOMAINS = ("alicdn.com",)
 IMAGE_PROXY_MAX_BYTES = 8 * 1024 * 1024
 
 
+def require_auth(
+    authorization: str | None = Header(default=None),
+) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing access token")
+    return verify_access_token(authorization.removeprefix("Bearer ").strip())
+
+
+def require_image_auth(
+    authorization: str | None = Header(default=None),
+    token: str | None = Query(default=None),
+) -> str:
+    if authorization and authorization.startswith("Bearer "):
+        return verify_access_token(authorization.removeprefix("Bearer ").strip())
+    if token:
+        return verify_access_token(token.strip())
+    raise HTTPException(status_code=401, detail="Missing access token")
+
+
+def verify_access_token(access_token: str) -> str:
+    try:
+        return auth_service.verify_token(access_token)
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
 @router.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.post("/api/auth/login", response_model=LoginResponse)
+def login(payload: LoginRequest) -> LoginResponse:
+    try:
+        token, expires_in = auth_service.login(payload.username, payload.password)
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return LoginResponse(
+        access_token=token,
+        expires_in=expires_in,
+        username=payload.username,
+    )
+
+
+@router.get("/api/auth/session", response_model=SessionResponse)
+def get_session(username: str = Depends(require_auth)) -> SessionResponse:
+    return SessionResponse(authenticated=True, username=username)
+
+
 @router.get("/api/image-proxy")
-def proxy_image(url: str = Query(..., min_length=8)) -> Response:
+def proxy_image(
+    url: str = Query(..., min_length=8),
+    _: str = Depends(require_image_auth),
+) -> Response:
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
     if parsed.scheme not in {"http", "https"}:
@@ -69,7 +118,10 @@ def proxy_image(url: str = Query(..., min_length=8)) -> Response:
 
 
 @router.post("/api/copywriting/generate", response_model=CopywritingResponse)
-def generate_copywriting(payload: CopywritingRequest) -> CopywritingResponse:
+def generate_copywriting(
+    payload: CopywritingRequest,
+    _: str = Depends(require_auth),
+) -> CopywritingResponse:
     return copywriting_service.generate(payload)
 
 
@@ -77,12 +129,16 @@ def generate_copywriting(payload: CopywritingRequest) -> CopywritingResponse:
 def create_source_search_task(
     payload: CreateSourceSearchTaskRequest,
     background_tasks: BackgroundTasks,
+    _: str = Depends(require_auth),
 ) -> SourceSearchTaskResponse:
     return task_service.create(payload, background_tasks)
 
 
 @router.get("/api/source-search/tasks/{task_id}", response_model=SourceSearchTaskResponse)
-def get_source_search_task(task_id: str) -> SourceSearchTaskResponse:
+def get_source_search_task(
+    task_id: str,
+    _: str = Depends(require_auth),
+) -> SourceSearchTaskResponse:
     task = task_service.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -93,7 +149,10 @@ def get_source_search_task(task_id: str) -> SourceSearchTaskResponse:
     "/api/source-search/tasks/{task_id}/results",
     response_model=SourceSearchResultResponse,
 )
-def get_source_search_results(task_id: str) -> SourceSearchResultResponse:
+def get_source_search_results(
+    task_id: str,
+    _: str = Depends(require_auth),
+) -> SourceSearchResultResponse:
     result = task_service.get_result(task_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Result not found")
